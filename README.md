@@ -1,30 +1,32 @@
 # Lift Tracker
 
-A no-nonsense weightlifting app for people who just want to log their workouts and track progress.
+A no-nonsense weightlifting app for people who just want to log their workouts and track progress. Fork and host your own!
+
+## Screenshots
+
+### Dashboard
+
+![Dashboard](public/screenshots/home.png)
+
+### Workout Logging
+
+![Workout Logging](public/screenshots/workout-sets.png)
+
+### Progress Tracking
+
+![Progress Tracking](public/screenshots/progress-chart.png)
 
 ## Features
 
-### 🏋️ Fast Workout Logging
-
 - Start a blank workout or use a saved template
-- Add exercises from the catalog, search with AI if you don't know the exact name
-- Log sets with weight and reps—that's it
-
-### 📊 Progress Tracking
-
+- Add exercises from a shared catalog — search with AI if you don't know the exact name
+- The exercise catalog grows organically: when AI search finds an exercise that isn't in the database yet, it gets added automatically for everyone
+- Log sets with weight and reps — that's it
 - See your estimated 1RM trends per exercise
 - Track personal records automatically
 - View weekly training volume
-
-### 📋 Workout Templates
-
-- Save your favorite workout routines
-- Start a new session from any template in one tap
-
-### 🏠 Training Places
-
+- Save workout routines as templates
 - Track where you train (home gym, commercial gym, etc.)
-- Associate workouts with locations
 
 ## Philosophy
 
@@ -103,7 +105,7 @@ docker build -t lift-tracker .
 docker run -p 3000:3000 --env-file .env lift-tracker
 ```
 
-Make sure to set all required environment variables. `BETTER_AUTH_URL` must match the public URL of your deployment.
+Make sure to set all required environment variables. `BETTER_AUTH_URL` must match the public URL of your deployment. Also add your domain to the list of allowed origins in the Google Cloud Console.
 
 ## License
 
