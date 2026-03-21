@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#1a1a2e"/>
+  <g transform="translate(256,256)">
+    <!-- Barbell bar -->
+    <rect x="-180" y="-8" width="360" height="16" rx="8" fill="#e2e8f0"/>
+    <!-- Left outer plate -->
+    <rect x="-180" y="-80" width="28" height="160" rx="6" fill="#3b82f6"/>
+    <!-- Left inner plate -->
+    <rect x="-148" y="-64" width="24" height="128" rx="5" fill="#60a5fa"/>
+    <!-- Right inner plate -->
+    <rect x="124" y="-64" width="24" height="128" rx="5" fill="#60a5fa"/>
+    <!-- Right outer plate -->
+    <rect x="152" y="-80" width="28" height="160" rx="6" fill="#3b82f6"/>
+  </g>
+</svg>

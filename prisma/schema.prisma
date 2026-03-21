@@ -1,0 +1,253 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =============================================================================
+// Better Auth Tables
+// =============================================================================
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  name          String?
+  image         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  sessions  Session[]
+  accounts  Account[]
+  places    Place[]
+  equipment Equipment[]
+  exercises Exercise[]
+  templates WorkoutTemplate[]
+  workouts  Workout[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+// =============================================================================
+// App Tables
+// =============================================================================
+
+model Place {
+  id         String   @id @default(cuid())
+  name       String
+  isArchived Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  userId   String
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workouts Workout[]
+
+  @@index([userId])
+}
+
+// Body part catalog (seeded, read-only)
+model BodyPart {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  czechName String?
+  slug      String   @unique
+  sortOrder Int
+  createdAt DateTime @default(now())
+
+  primaryExercises   Exercise[] @relation("ExercisePrimaryBodyPart")
+  secondaryExercises Exercise[] @relation("ExerciseSecondaryBodyParts")
+
+  @@index([slug])
+}
+
+// Equipment catalog (seeded + user-extendable)
+model Equipment {
+  id        String   @id @default(cuid())
+  name      String
+  czechName String?
+  slug      String   @unique
+  isPublic  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  createdById String?
+  createdBy   User?   @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  exercises            Exercise[]            @relation("ExerciseDefaultEquipment")
+  workoutExercises     WorkoutExercise[]
+  workoutTemplateItems WorkoutTemplateItem[]
+
+  @@unique([name, createdById])
+  @@index([createdById])
+  @@index([slug])
+}
+
+// Exercise catalog (public catalog + private user exercises)
+model Exercise {
+  id        String   @id @default(cuid())
+  name      String // Readable display name (e.g., "Bench Press")
+  slug      String   @unique // OPE standardized identifier (e.g., "bench_press")
+  czechName String?
+  isPublic  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  primaryBodyPartId String?
+  primaryBodyPart   BodyPart? @relation("ExercisePrimaryBodyPart", fields: [primaryBodyPartId], references: [id], onDelete: SetNull)
+
+  secondaryBodyParts BodyPart[] @relation("ExerciseSecondaryBodyParts")
+
+  equipmentId String?
+  equipment   Equipment? @relation("ExerciseDefaultEquipment", fields: [equipmentId], references: [id], onDelete: SetNull)
+
+  createdById String?
+  createdBy   User?   @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  workoutExercises     WorkoutExercise[]
+  workoutTemplateItems WorkoutTemplateItem[]
+
+  @@index([createdById])
+  @@index([primaryBodyPartId])
+  @@index([equipmentId])
+  @@index([isPublic])
+  @@index([slug])
+}
+
+model WorkoutTemplate {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String
+  user   User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items  WorkoutTemplateItem[]
+
+  @@index([userId])
+}
+
+model WorkoutTemplateItem {
+  id    String @id @default(cuid())
+  order Int
+
+  templateId String
+  template   WorkoutTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  exerciseId String
+  exercise   Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  equipmentId String?
+  equipment   Equipment? @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
+
+  @@index([templateId])
+  @@index([exerciseId])
+  @@index([equipmentId])
+}
+
+model Workout {
+  id         String    @id @default(cuid())
+  name       String?
+  startedAt  DateTime  @default(now())
+  endedAt    DateTime?
+  notes      String?
+  isArchived Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  userId    String
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  placeId   String?
+  place     Place?            @relation(fields: [placeId], references: [id], onDelete: SetNull)
+  exercises WorkoutExercise[]
+
+  @@index([userId])
+  @@index([placeId])
+  @@index([startedAt])
+}
+
+model WorkoutExercise {
+  id    String  @id @default(cuid())
+  order Int
+  notes String?
+
+  workoutId String
+  workout   Workout @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+
+  exerciseId String
+  exercise   Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  equipmentId String?
+  equipment   Equipment? @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
+
+  sets WorkoutSet[]
+
+  @@index([workoutId])
+  @@index([exerciseId])
+  @@index([equipmentId])
+}
+
+model WorkoutSet {
+  id        String   @id @default(cuid())
+  order     Int
+  reps      Int
+  weightKg  Decimal  @db.Decimal(6, 2) // Up to 9999.99 kg
+  isWarmup  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  workoutExerciseId String
+  workoutExercise   WorkoutExercise @relation(fields: [workoutExerciseId], references: [id], onDelete: Cascade)
+
+  @@index([workoutExerciseId])
+}

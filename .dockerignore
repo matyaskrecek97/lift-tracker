@@ -1,0 +1,13 @@
+# Dependencies (installed fresh in container)
+node_modules
+
+# Build outputs (rebuilt in container)
+.next
+
+# Local env files
+.env
+.env.*
+
+# Git & editor
+.git
+.cursor
