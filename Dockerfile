@@ -7,7 +7,7 @@ FROM node:24.13.0-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npx prisma generate && npm run build
+RUN npx prisma generate && npm run build:mcp-ui && npm run build
 
 FROM node:24.13.0-alpine AS runner
 WORKDIR /app
@@ -18,6 +18,7 @@ ENV HOSTNAME=0.0.0.0
 COPY --from=builder --chown=node:node /app/public ./public
 COPY --from=builder --chown=node:node /app/.next/standalone ./
 COPY --from=builder --chown=node:node /app/.next/static ./.next/static
+COPY --from=builder --chown=node:node /app/mcp-ui/dist ./mcp-ui/dist
 
 USER node
 EXPOSE 3000
