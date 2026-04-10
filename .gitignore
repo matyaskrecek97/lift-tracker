@@ -47,5 +47,8 @@ next-env.d.ts
 # temporary files
 .temp
 
+# MCP UI build output
+/mcp-ui/dist
+
 # Cursor
 .cursor

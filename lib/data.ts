@@ -32,7 +32,7 @@ const templateFullInclude = {
  * Handles Decimal → number (weightKg) and Date → ISO string (timestamps).
  */
 // biome-ignore lint/suspicious/noExplicitAny: transforming Prisma result with nested dynamic structure
-function serializeWorkout(raw: any): Workout {
+export function serializeWorkout(raw: any): Workout {
   return {
     ...raw,
     startedAt:

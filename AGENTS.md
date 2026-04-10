@@ -63,6 +63,12 @@ See `prisma/schema.prisma` for the database model.
 - Color mode: import from `@/components/ui/color-mode`
 - Mobile-first responsive design
 
+## MCP Server
+
+An embedded MCP server at `app/api/mcp/route.ts` exposes workout tools for AI clients. Tool registration lives in `lib/mcp-tools.ts`. Two tools (`create_workout`, `get_workout`) are app tools with an interactive UI built as a standalone Vite/React app in `mcp-ui/`. Run `npm run build:mcp-ui` after UI changes. Auth uses OAuth 2.1 via Better Auth's `mcp` plugin — MCP clients authenticate with bearer tokens validated by `auth.api.getMcpSession()`. Each tool callback extracts `userId` from `extra.authInfo`.
+
+**Zod versions**: The MCP SDK requires Zod v3, while the app uses Zod v4. Use `import { z } from "zod3"` in MCP tool code (`lib/mcp-tools.ts`) and `import { z } from "zod"` everywhere else.
+
 ## Auth
 
 Uses **better-auth** with Google OAuth:

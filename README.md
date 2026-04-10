@@ -96,6 +96,14 @@ The app will be available at [http://localhost:3000](http://localhost:3000).
 4. Add `http://localhost:3000/api/auth/callback/google` to **Authorized redirect URIs**
 5. Copy the Client ID and Client Secret into your `.env`
 
+## MCP Server
+
+The app exposes an MCP (Model Context Protocol) endpoint at `/api/mcp`, allowing AI clients like Claude and ChatGPT to manage workouts via natural language.
+
+Authentication is handled automatically via OAuth 2.1 — on first connect, the client opens a browser window for Google login.
+
+Connected clients can be viewed and revoked in **Settings** within the app.
+
 ## Self-Hosting
 
 A production-ready `Dockerfile` is included. Build and run with any container hosting platform:

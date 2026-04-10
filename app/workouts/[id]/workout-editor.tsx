@@ -795,7 +795,9 @@ function ExerciseCard({
                 mb="2"
                 px="2"
               >
-                <Text w="12" textAlign="center">SET</Text>
+                <Text w="12" textAlign="center">
+                  SET
+                </Text>
                 <Text flex="1" textAlign="center">
                   WEIGHT (kg)
                 </Text>

@@ -74,6 +74,9 @@ function UserMenu() {
               </Text>
             </Menu.Item>
             <Menu.Separator />
+            <Menu.Item value="settings" asChild>
+              <Link href="/settings">Settings</Link>
+            </Menu.Item>
             <Menu.Item value="signout" onClick={() => signOut()}>
               Sign out
             </Menu.Item>

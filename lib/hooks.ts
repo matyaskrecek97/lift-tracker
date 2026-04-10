@@ -247,7 +247,12 @@ export function useExerciseHistory(
     : "";
   const key =
     exerciseIds.length > 0
-      ? ["/api/exercises/history", ...exerciseIds.sort(), workoutId, equipmentHash]
+      ? [
+          "/api/exercises/history",
+          ...exerciseIds.sort(),
+          workoutId,
+          equipmentHash,
+        ]
       : null;
   return useSWR<Record<string, { reps: number; weight: number } | null>>(
     key,
