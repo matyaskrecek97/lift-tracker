@@ -11,6 +11,7 @@ import { z } from "zod3";
 import { verifyEquipmentAccess, verifyPlaceAccess } from "./api-utils";
 import {
   getExercises,
+  getPlaces,
   getWorkout,
   getWorkouts,
   serializeWorkout,
@@ -75,7 +76,7 @@ export function registerTools(server: McpServer) {
     {
       title: "List Workouts",
       description:
-        "List the user's recent workouts with summaries (id, name, date, exercise count, finished status).",
+        "List the user's recent workouts with summaries. Supports filtering by place and sort order.",
       inputSchema: {
         limit: z
           .number()
@@ -84,11 +85,22 @@ export function registerTools(server: McpServer) {
           .max(100)
           .optional()
           .describe("Max workouts to return (default 20)"),
+        placeId: z
+          .string()
+          .optional()
+          .describe("Filter by place/gym ID (use list_places to find IDs)"),
+        sort: z
+          .enum(["newest", "oldest"])
+          .optional()
+          .describe("Sort order by date (default newest)"),
       },
     },
-    async ({ limit }, extra) => {
+    async ({ limit, placeId, sort }, extra) => {
       const userId = extractUserId(extra);
-      const workouts = await getWorkouts(userId, limit ?? 20);
+      const workouts = await getWorkouts(userId, limit ?? 20, {
+        placeId,
+        sort,
+      });
       const summaries = workouts.map((w) => ({
         id: w.id,
         name: w.name,
@@ -97,6 +109,7 @@ export function registerTools(server: McpServer) {
         exerciseCount: w.exercises.length,
         totalSets: w.exercises.reduce((sum, ex) => sum + ex.sets.length, 0),
         finished: !!w.endedAt,
+        place: w.place ? { id: w.place.id, name: w.place.name } : null,
       }));
       return json(summaries);
     },
@@ -141,6 +154,21 @@ export function registerTools(server: McpServer) {
       const userId = extractUserId(extra);
       const exercises = await getExercises(userId, query);
       return json(exercises);
+    },
+  );
+
+  server.registerTool(
+    "list_places",
+    {
+      title: "List Places",
+      description:
+        "List the user's gyms/places. Use to resolve a place name to an ID for filtering workouts.",
+      inputSchema: {},
+    },
+    async (_args, extra) => {
+      const userId = extractUserId(extra);
+      const places = await getPlaces(userId);
+      return json(places.map((p) => ({ id: p.id, name: p.name })));
     },
   );
 

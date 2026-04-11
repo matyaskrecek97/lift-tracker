@@ -56,11 +56,19 @@ export function serializeWorkout(raw: any): Workout {
 }
 
 export const getWorkouts = cache(
-  async (userId: string, limit = 20): Promise<Workout[]> => {
+  async (
+    userId: string,
+    limit = 20,
+    filters?: { placeId?: string; sort?: "newest" | "oldest" },
+  ): Promise<Workout[]> => {
     const workouts = await prisma.workout.findMany({
-      where: { userId, isArchived: false },
+      where: {
+        userId,
+        isArchived: false,
+        ...(filters?.placeId ? { placeId: filters.placeId } : {}),
+      },
       include: workoutFullInclude,
-      orderBy: { startedAt: "desc" },
+      orderBy: { startedAt: filters?.sort === "oldest" ? "asc" : "desc" },
       take: limit,
     });
     return workouts.map(serializeWorkout);
