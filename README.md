@@ -16,6 +16,10 @@ A no-nonsense weightlifting app for people who just want to log their workouts a
 
 ![Progress Tracking](public/screenshots/progress-chart.png)
 
+### AI Integration via MCP
+
+![AI Integration via MCP](public/screenshots/mcp-ui.png)
+
 ## Features
 
 - Start a blank workout or use a saved template
@@ -27,6 +31,7 @@ A no-nonsense weightlifting app for people who just want to log their workouts a
 - View weekly training volume
 - Save workout routines as templates
 - Track where you train (home gym, commercial gym, etc.)
+- Ask AI assistants about your workouts via MCP — Claude, ChatGPT, and other clients can query and create workouts with rich interactive UI
 
 ## Philosophy
 
