@@ -153,6 +153,7 @@ export function WorkoutsList({
                 workout={workout}
                 onClick={() => router.push(`/workouts/${workout.id}`)}
                 onDeleted={() => router.refresh()}
+                onUpdated={() => router.refresh()}
                 isActive={!workout.endedAt}
               />
             ))}

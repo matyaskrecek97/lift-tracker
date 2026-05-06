@@ -53,7 +53,12 @@ import {
   type WorkoutExercise,
   type WorkoutSet,
 } from "@/lib/hooks";
-import { formatDateTimeForInput, formatDuration, toNumber } from "@/lib/utils";
+import {
+  formatDateTimeForInput,
+  formatDuration,
+  generateWorkoutTitle,
+  toNumber,
+} from "@/lib/utils";
 
 function calculateWorkoutStats(workout: {
   startedAt: string;
@@ -176,10 +181,9 @@ export function WorkoutEditor({
     if (!workout) return;
     const updates: { endedAt: Date; name?: string } = { endedAt: new Date() };
     if (!workout.name && workout.exercises.length > 0) {
-      updates.name = workout.exercises
-        .slice(0, 3)
-        .map((e) => e.exercise.name)
-        .join(", ");
+      updates.name = generateWorkoutTitle(
+        workout.exercises.map((e) => e.exercise.name),
+      );
     }
     await updateWorkout(id, updates);
     router.push("/");
@@ -318,6 +322,7 @@ export function WorkoutEditor({
             <WorkoutOptionsMenu
               workout={workout}
               onDeleted={() => window.location.replace("/")}
+              onUpdated={refreshWorkout}
             />
           </HStack>
           <Text color="fg.muted" textStyle="sm">

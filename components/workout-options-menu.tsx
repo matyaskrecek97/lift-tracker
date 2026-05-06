@@ -7,22 +7,40 @@ import {
   createTemplateFromWorkout,
   deleteWorkout,
   duplicateWorkout,
+  updateWorkout,
   type Workout,
 } from "@/lib/hooks";
+import { generateWorkoutTitle } from "@/lib/utils";
 
 interface WorkoutOptionsMenuProps {
   workout: Workout;
   onDeleted?: () => void;
+  onUpdated?: () => void;
 }
 
 export function WorkoutOptionsMenu({
   workout,
   onDeleted,
+  onUpdated,
 }: WorkoutOptionsMenuProps) {
   const [isBusy, setIsBusy] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const isFinished = !!workout.endedAt;
+  const hasExercises = workout.exercises.length > 0;
+
+  const handleGenerateName = async () => {
+    setIsBusy(true);
+    try {
+      const name = generateWorkoutTitle(
+        workout.exercises.map((e) => e.exercise.name),
+      );
+      await updateWorkout(workout.id, { name });
+      onUpdated?.();
+    } finally {
+      setIsBusy(false);
+    }
+  };
 
   const handleDuplicate = async () => {
     setIsBusy(true);
@@ -72,6 +90,11 @@ export function WorkoutOptionsMenu({
         <Portal>
           <Menu.Positioner>
             <Menu.Content minW="180px" onClick={(e) => e.stopPropagation()}>
+              {hasExercises && (
+                <Menu.Item value="generate-name" onClick={handleGenerateName}>
+                  Generate name
+                </Menu.Item>
+              )}
               {isFinished && (
                 <>
                   <Menu.Item value="duplicate" onClick={handleDuplicate}>
@@ -85,7 +108,7 @@ export function WorkoutOptionsMenu({
                   </Menu.Item>
                 </>
               )}
-              {isFinished && <Menu.Separator />}
+              {(isFinished || hasExercises) && <Menu.Separator />}
               <Menu.Item
                 value="delete"
                 color="fg.error"

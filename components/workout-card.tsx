@@ -10,11 +10,13 @@ export function WorkoutCard({
   workout,
   onClick,
   onDeleted,
+  onUpdated,
   isActive,
 }: {
   workout: Workout;
   onClick: () => void;
   onDeleted: () => void;
+  onUpdated?: () => void;
   isActive?: boolean;
 }) {
   const totalSets = useMemo(
@@ -65,7 +67,11 @@ export function WorkoutCard({
                 Active
               </Badge>
             )}
-            <WorkoutOptionsMenu workout={workout} onDeleted={onDeleted} />
+            <WorkoutOptionsMenu
+              workout={workout}
+              onDeleted={onDeleted}
+              onUpdated={onUpdated}
+            />
           </HStack>
         </HStack>
         <Text textStyle="sm" color="fg.muted">

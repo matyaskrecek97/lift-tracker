@@ -33,6 +33,14 @@ export function formatDateTimeForInput(date: Date): string {
   return `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
+/**
+ * Generate a workout title from exercise names: first three, comma-separated.
+ * Returns an empty string when no names are provided.
+ */
+export function generateWorkoutTitle(exerciseNames: string[]): string {
+  return exerciseNames.slice(0, 3).join(", ");
+}
+
 /** Format a duration in minutes to a human-readable string. */
 export function formatDuration(minutes: number | null): string {
   if (minutes === null) return "In progress";

@@ -17,6 +17,7 @@ import {
   serializeWorkout,
 } from "./data";
 import prisma, { workoutFullInclude } from "./prisma";
+import { generateWorkoutTitle } from "./utils";
 
 function extractUserId(extra: { authInfo?: AuthInfo }): string {
   const userId = extra.authInfo?.extra?.userId;
@@ -172,6 +173,27 @@ export function registerTools(server: McpServer) {
     },
   );
 
+  server.registerTool(
+    "generate_workout_title",
+    {
+      title: "Generate Workout Title",
+      description:
+        "Generate a title for a workout from its first three exercises. Returns the title without modifying the workout; use update_workout to persist it.",
+      inputSchema: {
+        workoutId: z.string().describe("The workout ID"),
+      },
+    },
+    async ({ workoutId }, extra) => {
+      const userId = extractUserId(extra);
+      const workout = await getWorkout(userId, workoutId);
+      if (!workout) return error("Workout not found");
+      const title = generateWorkoutTitle(
+        workout.exercises.map((e) => e.exercise.name),
+      );
+      return json({ workoutId, title });
+    },
+  );
+
   // ── Mutations ──────────────────────────────────────────────────────────────
 
   registerAppTool(
@@ -204,6 +226,7 @@ export function registerTools(server: McpServer) {
         equipmentId?: string | null;
         order: number;
       }[] = [];
+      let exerciseNames: string[] = [];
       let workoutName = name;
 
       if (templateId) {
@@ -212,7 +235,9 @@ export function registerTools(server: McpServer) {
           include: {
             items: {
               orderBy: { order: "asc" },
-              include: { exercise: { select: { equipmentId: true } } },
+              include: {
+                exercise: { select: { equipmentId: true, name: true } },
+              },
             },
           },
         });
@@ -223,7 +248,10 @@ export function registerTools(server: McpServer) {
             equipmentId: item.equipmentId ?? item.exercise.equipmentId,
             order: item.order,
           }));
-          if (!workoutName) workoutName = template.name;
+          exerciseNames = template.items.map((item) => item.exercise.name);
+          if (!workoutName) {
+            workoutName = generateWorkoutTitle(exerciseNames) || template.name;
+          }
         }
       }
 
@@ -302,19 +330,37 @@ export function registerTools(server: McpServer) {
     "finish_workout",
     {
       title: "Finish Workout",
-      description: "Mark a workout as complete by setting endedAt to now.",
+      description:
+        "Mark a workout as complete by setting endedAt to now. If the workout has no name, generate one from its first three exercises.",
       inputSchema: {
         workoutId: z.string().describe("The workout ID"),
       },
     },
     async ({ workoutId }, extra) => {
       const userId = extractUserId(extra);
-      if (!(await findOwnedWorkout(workoutId, userId)))
-        return error("Workout not found");
+      const existing = await prisma.workout.findFirst({
+        where: { id: workoutId, userId },
+        select: {
+          name: true,
+          exercises: {
+            orderBy: { order: "asc" },
+            select: { exercise: { select: { name: true } } },
+          },
+        },
+      });
+      if (!existing) return error("Workout not found");
+
+      const data: { endedAt: Date; name?: string } = { endedAt: new Date() };
+      if (!existing.name && existing.exercises.length > 0) {
+        const generated = generateWorkoutTitle(
+          existing.exercises.map((e) => e.exercise.name),
+        );
+        if (generated) data.name = generated;
+      }
 
       const workout = await prisma.workout.update({
         where: { id: workoutId },
-        data: { endedAt: new Date() },
+        data,
         include: workoutFullInclude,
       });
 

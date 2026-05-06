@@ -132,6 +132,7 @@ export function DashboardClient({
                 workout={workout}
                 onClick={() => router.push(`/workouts/${workout.id}`)}
                 onDeleted={() => router.refresh()}
+                onUpdated={() => router.refresh()}
                 isActive
               />
             ))}
@@ -168,6 +169,7 @@ export function DashboardClient({
                   workout={workout}
                   onClick={() => router.push(`/workouts/${workout.id}`)}
                   onDeleted={() => router.refresh()}
+                  onUpdated={() => router.refresh()}
                 />
               ))}
             </Grid>
