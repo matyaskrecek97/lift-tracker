@@ -8,24 +8,8 @@ import type {
   Workout,
   WorkoutTemplate,
 } from "./hooks";
-import prisma, { workoutFullInclude } from "./prisma";
+import prisma, { templateFullInclude, workoutFullInclude } from "./prisma";
 import { calculate1RM, toNumber } from "./utils";
-
-const templateFullInclude = {
-  items: {
-    include: {
-      exercise: {
-        include: {
-          primaryBodyPart: true,
-          secondaryBodyParts: true,
-          equipment: true,
-        },
-      },
-      equipment: true,
-    },
-    orderBy: { order: "asc" as const },
-  },
-};
 
 /**
  * Convert Prisma workout to a serializable Workout matching the hooks interface.

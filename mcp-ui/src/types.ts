@@ -50,3 +50,33 @@ export interface Workout {
   place: { id: string; name: string } | null;
   exercises: WorkoutExercise[];
 }
+
+export interface WorkoutTemplateItem {
+  id: string;
+  order: number;
+  exercise: Exercise;
+  equipment: Equipment | null;
+}
+
+export interface WorkoutTemplate {
+  id: string;
+  name: string;
+  items: WorkoutTemplateItem[];
+}
+
+export interface ExerciseSuggestion {
+  isExistingMatch: boolean;
+  exerciseName: string;
+  exerciseSlug: string;
+  czechName: string;
+  primaryBodyPartSlug: string;
+  secondaryBodyPartSlugs: string[];
+  defaultEquipmentSlug: string | null;
+  sessionEquipmentSlug: string | null;
+  confidence: "high" | "medium" | "low";
+}
+
+export interface FindOrSuggestExerciseResult {
+  exercises: Exercise[];
+  suggestion: ExerciseSuggestion;
+}

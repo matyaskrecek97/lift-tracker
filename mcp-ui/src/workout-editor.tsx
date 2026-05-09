@@ -1,6 +1,7 @@
 import type { App } from "@modelcontextprotocol/ext-apps";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Exercise, Workout, WorkoutExercise, WorkoutSet } from "./types";
+import { ExerciseSearch } from "./exercise-search";
+import type { Workout, WorkoutExercise, WorkoutSet } from "./types";
 
 function toNumber(value: number | string): number {
   return typeof value === "string" ? parseFloat(value) : value;
@@ -198,11 +199,15 @@ export function WorkoutEditor({ app, workout, onWorkoutChange }: Props) {
       {isAddingExercise ? (
         <ExerciseSearch
           app={app}
-          workoutId={workout.id}
-          onDone={() => {
+          onSelectExercise={async (exerciseId) => {
+            await app.callServerTool({
+              name: "add_exercise_to_workout",
+              arguments: { workoutId: workout.id, exerciseId },
+            });
             setIsAddingExercise(false);
-            refreshWorkout();
+            await refreshWorkout();
           }}
+          onCancel={() => setIsAddingExercise(false)}
         />
       ) : (
         <button
@@ -445,110 +450,6 @@ function SetRow({
       >
         ✕
       </button>
-    </div>
-  );
-}
-
-function ExerciseSearch({
-  app,
-  workoutId,
-  onDone,
-}: {
-  app: App;
-  workoutId: string;
-  onDone: () => void;
-}) {
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<Exercise[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
-  const [isAdding, setIsAdding] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-
-  const handleSearch = (value: string) => {
-    setQuery(value);
-    clearTimeout(timerRef.current);
-    if (!value.trim()) {
-      setResults([]);
-      return;
-    }
-    timerRef.current = setTimeout(async () => {
-      setIsSearching(true);
-      try {
-        const result = await app.callServerTool({
-          name: "search_exercises",
-          arguments: { query: value },
-        });
-        const text = result.content?.find(
-          (c): c is { type: "text"; text: string } => c.type === "text",
-        )?.text;
-        if (text) setResults(JSON.parse(text));
-      } catch (e) {
-        console.error("Search failed:", e);
-      } finally {
-        setIsSearching(false);
-      }
-    }, 300);
-  };
-
-  const handleSelect = async (exercise: Exercise) => {
-    if (isAdding) return;
-    setIsAdding(true);
-    try {
-      await app.callServerTool({
-        name: "add_exercise_to_workout",
-        arguments: { workoutId, exerciseId: exercise.id },
-      });
-      onDone();
-    } catch (e) {
-      console.error("Failed to add exercise:", e);
-    } finally {
-      setIsAdding(false);
-    }
-  };
-
-  return (
-    <div className="search-panel">
-      <div className="search-header">
-        <input
-          className="search-input"
-          placeholder="Search exercises..."
-          value={query}
-          onChange={(e) => handleSearch(e.target.value)}
-          ref={(el) => el?.focus()}
-        />
-        <button type="button" className="btn btn-sm" onClick={onDone}>
-          Cancel
-        </button>
-      </div>
-      {isSearching && <div className="search-status">Searching...</div>}
-      {results.length > 0 && (
-        <div className="search-results">
-          {results.slice(0, 15).map((ex) => (
-            <button
-              type="button"
-              key={ex.id}
-              className="search-result"
-              onClick={() => handleSelect(ex)}
-              disabled={isAdding}
-            >
-              <span className="search-result-name">{ex.name}</span>
-              {ex.primaryBodyPart && (
-                <span className="badge badge-sm">
-                  {ex.primaryBodyPart.name}
-                </span>
-              )}
-              {ex.equipment && (
-                <span className="badge badge-sm badge-outline">
-                  {ex.equipment.name}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-      )}
-      {!isSearching && query.trim() && results.length === 0 && (
-        <div className="search-status">No exercises found</div>
-      )}
     </div>
   );
 }

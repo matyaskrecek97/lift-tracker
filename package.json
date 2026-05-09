@@ -17,7 +17,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:format": "prisma format",
     "ai:test": "tsx scripts/test-exercise-search.ts",
-    "build:mcp-ui": "cd mcp-ui && npx vite build"
+    "build:mcp-ui": "rm -rf mcp-ui/dist && cd mcp-ui && MCP_UI_ENTRY=mcp-app.html npx vite build && MCP_UI_ENTRY=template-app.html npx vite build"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

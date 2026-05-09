@@ -35,3 +35,19 @@ export const workoutFullInclude = {
     orderBy: { order: "asc" },
   },
 } satisfies Prisma.WorkoutInclude;
+
+export const templateFullInclude = {
+  items: {
+    include: {
+      exercise: {
+        include: {
+          primaryBodyPart: true,
+          secondaryBodyParts: true,
+          equipment: true,
+        },
+      },
+      equipment: true,
+    },
+    orderBy: { order: "asc" },
+  },
+} satisfies Prisma.WorkoutTemplateInclude;

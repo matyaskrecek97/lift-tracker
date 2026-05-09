@@ -8,15 +8,21 @@ import {
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod3";
-import { verifyEquipmentAccess, verifyPlaceAccess } from "./api-utils";
+import {
+  verifyEquipmentAccess,
+  verifyExerciseAccess,
+  verifyPlaceAccess,
+} from "./api-utils";
 import {
   getExercises,
   getPlaces,
+  getTemplate,
   getWorkout,
   getWorkouts,
   serializeWorkout,
 } from "./data";
-import prisma, { workoutFullInclude } from "./prisma";
+import { searchExerciseWithAI } from "./exercise-agent";
+import prisma, { templateFullInclude, workoutFullInclude } from "./prisma";
 import { generateWorkoutTitle } from "./utils";
 
 function extractUserId(extra: { authInfo?: AuthInfo }): string {
@@ -49,22 +55,73 @@ async function findOwnedWorkoutExercise(
   return we;
 }
 
-const RESOURCE_URI = "ui://lift-tracker/workout-editor.html";
-const MCP_UI_DIST = path.join(process.cwd(), "mcp-ui", "dist", "mcp-app.html");
+async function findOwnedTemplate(templateId: string, userId: string) {
+  return prisma.workoutTemplate.findFirst({
+    where: { id: templateId, userId },
+  });
+}
+
+function generateExerciseSlug(name: string, userId: string): string {
+  const base = name
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .trim()
+    .replace(/\s+/g, "_");
+  return `${base}_${userId.slice(0, 8)}`;
+}
+
+const WORKOUT_RESOURCE_URI = "ui://lift-tracker/workout-editor.html";
+const WORKOUT_UI_DIST = path.join(
+  process.cwd(),
+  "mcp-ui",
+  "dist",
+  "mcp-app.html",
+);
+
+const TEMPLATE_RESOURCE_URI = "ui://lift-tracker/template-editor.html";
+const TEMPLATE_UI_DIST = path.join(
+  process.cwd(),
+  "mcp-ui",
+  "dist",
+  "template-app.html",
+);
 
 export function registerTools(server: McpServer) {
-  // ── App Resource ────────────────────────────────────────────────────────────
+  // ── App Resources ───────────────────────────────────────────────────────────
 
   registerAppResource(
     server,
     "Workout Editor",
-    RESOURCE_URI,
+    WORKOUT_RESOURCE_URI,
     { description: "Interactive workout editor UI" },
     async () => {
-      const html = await fs.readFile(MCP_UI_DIST, "utf-8");
+      const html = await fs.readFile(WORKOUT_UI_DIST, "utf-8");
       return {
         contents: [
-          { uri: RESOURCE_URI, mimeType: RESOURCE_MIME_TYPE, text: html },
+          {
+            uri: WORKOUT_RESOURCE_URI,
+            mimeType: RESOURCE_MIME_TYPE,
+            text: html,
+          },
+        ],
+      };
+    },
+  );
+
+  registerAppResource(
+    server,
+    "Template Editor",
+    TEMPLATE_RESOURCE_URI,
+    { description: "Interactive workout template editor UI" },
+    async () => {
+      const html = await fs.readFile(TEMPLATE_UI_DIST, "utf-8");
+      return {
+        contents: [
+          {
+            uri: TEMPLATE_RESOURCE_URI,
+            mimeType: RESOURCE_MIME_TYPE,
+            text: html,
+          },
         ],
       };
     },
@@ -126,7 +183,7 @@ export function registerTools(server: McpServer) {
       inputSchema: {
         workoutId: z.string().describe("The workout ID"),
       },
-      _meta: { ui: { resourceUri: RESOURCE_URI } },
+      _meta: { ui: { resourceUri: WORKOUT_RESOURCE_URI } },
     },
     async ({ workoutId }, extra) => {
       const userId = extractUserId(extra);
@@ -146,7 +203,7 @@ export function registerTools(server: McpServer) {
     {
       title: "Search Exercises",
       description:
-        "Search the exercise catalog by name. Returns exercises with body part and equipment info.",
+        "Search the exercise catalog by name (substring match on English and Czech names). Returns exercises with body part and equipment info. If this returns no results for what should be a valid exercise, fall back to `find_or_suggest_exercise` which uses an LLM to interpret slang/abbreviations and propose a standardized name.",
       inputSchema: {
         query: z.string().describe("Search query (matches exercise name)"),
       },
@@ -155,6 +212,179 @@ export function registerTools(server: McpServer) {
       const userId = extractUserId(extra);
       const exercises = await getExercises(userId, query);
       return json(exercises);
+    },
+  );
+
+  server.registerTool(
+    "find_or_suggest_exercise",
+    {
+      title: "Find or Suggest Exercise",
+      description:
+        "LLM-powered fallback for `search_exercises`. Interprets the user's free-form description (any language, slang, abbreviations) and returns a structured suggestion with standardized OPE naming. Use this when `search_exercises` returns no good match.\n\n" +
+        "Returns `{ exercises, suggestion }`:\n" +
+        "- `exercises`: any direct DB matches for the query (may be empty).\n" +
+        "- `suggestion.isExistingMatch === true`: pick the matching exercise from `exercises` (or call `search_exercises` with `suggestion.exerciseName` to get its id), then use it directly.\n" +
+        "- `suggestion.isExistingMatch === false`: the exercise does not exist yet — call `create_exercise` with the suggestion fields to mint it, then use the returned id.\n\n" +
+        "The suggestion follows OPE naming: readable name with proper spaces (e.g., `Bench Press`), snake_case slug (e.g., `bench_press`), no equipment in the name (equipment is a separate dimension via `defaultEquipmentSlug` / `sessionEquipmentSlug`).",
+      inputSchema: {
+        query: z
+          .string()
+          .min(1)
+          .describe(
+            "Free-form description of the exercise (any language). E.g. 'bench press with bands', 'tlak na hrudník na šikmé lavici'.",
+          ),
+      },
+    },
+    async ({ query }, extra) => {
+      const userId = extractUserId(extra);
+
+      const suggestion = await searchExerciseWithAI(query, userId);
+
+      const directMatches = await prisma.exercise.findMany({
+        where: {
+          AND: [
+            { OR: [{ isPublic: true }, { createdById: userId }] },
+            {
+              OR: [
+                { name: { contains: query, mode: "insensitive" } },
+                { czechName: { contains: query, mode: "insensitive" } },
+              ],
+            },
+          ],
+        },
+        include: {
+          primaryBodyPart: true,
+          secondaryBodyParts: true,
+          equipment: true,
+        },
+        take: 5,
+      });
+
+      return json({ exercises: directMatches, suggestion });
+    },
+  );
+
+  server.registerTool(
+    "create_exercise",
+    {
+      title: "Create Exercise",
+      description:
+        "Create a new exercise in the catalog. Use this AFTER `find_or_suggest_exercise` returns a suggestion with `isExistingMatch === false`, or when you already know an exercise is missing.\n\n" +
+        "OPE naming rules (must follow):\n" +
+        "- `name`: readable display name with spaces and proper capitalization (e.g., `Bench Press`, `Romanian Deadlift`). NEVER include equipment in the name (no `Dumbbell Curl` — use `Bicep Curl` and set `equipmentSlug: 'dumbbell'`).\n" +
+        "- `slug`: snake_case identifier matching the name (e.g., `bench_press`, `romanian_deadlift`). Lowercase letters, digits and underscores only.\n" +
+        "- Use anatomical Latin singulars: `Triceps` (not `Tricep`), `Biceps` (not `Bicep`).\n" +
+        "- `czechName`: natural Czech translation.\n\n" +
+        "Body part slugs: `chest`, `back`, `lats`, `traps`, `shoulders-front`, `shoulders-side`, `shoulders-rear`, `biceps`, `triceps`, `forearms`, `abs`, `obliques`, `lower-back`, `glutes`, `quads`, `hamstrings`, `calves`, `adductors`.\n" +
+        "Equipment slugs: `barbell`, `dumbbell`, `cable`, `machine`, `smith-machine`, `bodyweight`, `weighted-bodyweight`, `band`, `kettlebell`, `ez-bar`, `plate`, `trap-bar`, `landmine`, `suspension`, `other`.\n\n" +
+        "ALWAYS prefer searching first (`search_exercises`, `find_or_suggest_exercise`) before creating to avoid duplicates.",
+      inputSchema: {
+        name: z.string().min(1).describe("Readable display name"),
+        slug: z
+          .string()
+          .regex(
+            /^[a-z0-9_]+$/,
+            "Slug must contain only lowercase letters, numbers, and underscores",
+          )
+          .optional()
+          .describe(
+            "snake_case OPE identifier. If omitted, an auto-generated private slug is used.",
+          ),
+        czechName: z.string().optional().describe("Czech translation"),
+        primaryBodyPartSlug: z
+          .string()
+          .optional()
+          .describe("Slug of the primary body part"),
+        secondaryBodyPartSlugs: z
+          .array(z.string())
+          .optional()
+          .describe("Slugs of secondary body parts"),
+        equipmentSlug: z
+          .string()
+          .optional()
+          .describe("Default equipment slug for this movement"),
+        isPublic: z
+          .boolean()
+          .optional()
+          .describe(
+            "Whether the exercise is public (default true). Set to false to keep it private to the current user.",
+          ),
+      },
+    },
+    async (
+      {
+        name,
+        slug,
+        czechName,
+        primaryBodyPartSlug,
+        secondaryBodyPartSlugs,
+        equipmentSlug,
+        isPublic,
+      },
+      extra,
+    ) => {
+      const userId = extractUserId(extra);
+
+      const finalSlug = slug ?? generateExerciseSlug(name, userId);
+
+      const primaryBodyPart = primaryBodyPartSlug
+        ? await prisma.bodyPart.findUnique({
+            where: { slug: primaryBodyPartSlug },
+          })
+        : null;
+      if (primaryBodyPartSlug && !primaryBodyPart) {
+        return error(`Unknown primaryBodyPartSlug: ${primaryBodyPartSlug}`);
+      }
+
+      const secondaryBodyParts =
+        secondaryBodyPartSlugs && secondaryBodyPartSlugs.length > 0
+          ? await prisma.bodyPart.findMany({
+              where: { slug: { in: secondaryBodyPartSlugs } },
+            })
+          : [];
+
+      const equipment = equipmentSlug
+        ? await prisma.equipment.findUnique({ where: { slug: equipmentSlug } })
+        : null;
+      if (equipmentSlug && !equipment) {
+        return error(`Unknown equipmentSlug: ${equipmentSlug}`);
+      }
+
+      try {
+        const exercise = await prisma.exercise.create({
+          data: {
+            name,
+            slug: finalSlug,
+            czechName,
+            isPublic: isPublic ?? true,
+            createdById: userId,
+            primaryBodyPartId: primaryBodyPart?.id,
+            equipmentId: equipment?.id,
+            secondaryBodyParts: {
+              connect: secondaryBodyParts.map((bp) => ({ id: bp.id })),
+            },
+          },
+          include: {
+            primaryBodyPart: true,
+            secondaryBodyParts: true,
+            equipment: true,
+          },
+        });
+
+        return json(exercise);
+      } catch (e) {
+        if (
+          typeof e === "object" &&
+          e !== null &&
+          "code" in e &&
+          e.code === "P2002"
+        ) {
+          return error(
+            `An exercise with slug "${finalSlug}" already exists. Use search_exercises to find it.`,
+          );
+        }
+        throw e;
+      }
     },
   );
 
@@ -202,7 +432,12 @@ export function registerTools(server: McpServer) {
     {
       title: "Create Workout",
       description:
-        "Start a new workout. Optionally create from a template or at a specific place. Opens an interactive editor UI.",
+        "Start a new workout, or log a completed one. Optionally create from a template or at a specific place. Opens an interactive editor UI.\n\n" +
+        "TIME HANDLING — IMPORTANT:\n" +
+        "- If the user did NOT mention when the workout started, ask them before calling this tool (e.g. 'When did you start? (now / a time today / a past date)').\n" +
+        "- If the user is logging a workout that has already finished and did not mention the end time, also ask for it.\n" +
+        "- Omit `startedAt` only if the user explicitly says the workout starts now. Omit `endedAt` for an in-progress workout.\n" +
+        "- Always pass times as ISO 8601 strings.",
       inputSchema: {
         name: z.string().max(100).optional().describe("Workout name"),
         templateId: z
@@ -211,10 +446,24 @@ export function registerTools(server: McpServer) {
           .describe("Template ID to copy exercises from"),
         placeId: z.string().optional().describe("Place/gym ID"),
         notes: z.string().max(500).optional().describe("Workout notes"),
+        startedAt: z
+          .string()
+          .datetime()
+          .optional()
+          .describe(
+            "ISO 8601 start time (e.g. '2026-05-06T18:00:00Z'). If the user did not mention when the workout started, ASK them before calling this tool. Only omit if the user explicitly says they're starting now.",
+          ),
+        endedAt: z
+          .string()
+          .datetime()
+          .optional()
+          .describe(
+            "ISO 8601 end time. Only set when logging a workout that has already finished. If the user is logging a past/completed workout but did not mention an end time, ASK them. Omit when starting a new in-progress workout.",
+          ),
       },
-      _meta: { ui: { resourceUri: RESOURCE_URI } },
+      _meta: { ui: { resourceUri: WORKOUT_RESOURCE_URI } },
     },
-    async ({ name, templateId, placeId, notes }, extra) => {
+    async ({ name, templateId, placeId, notes, startedAt, endedAt }, extra) => {
       const userId = extractUserId(extra);
 
       if (placeId && !(await verifyPlaceAccess(placeId, userId))) {
@@ -261,6 +510,8 @@ export function registerTools(server: McpServer) {
           name: workoutName,
           placeId,
           notes,
+          ...(startedAt && { startedAt: new Date(startedAt) }),
+          ...(endedAt && { endedAt: new Date(endedAt) }),
           exercises: { create: exercisesToCreate },
         },
         include: workoutFullInclude,
@@ -623,6 +874,182 @@ export function registerTools(server: McpServer) {
       });
 
       return json({ success: true, workoutExerciseId });
+    },
+  );
+
+  // ── Templates ──────────────────────────────────────────────────────────────
+
+  registerAppTool(
+    server,
+    "create_workout_template",
+    {
+      title: "Create Workout Template",
+      description:
+        "Create a reusable workout template (a named list of exercises that can later seed a workout via `create_workout`'s `templateId`). Opens an interactive editor UI where the user can fine-tune the template. Items are optional — if omitted, the template is created empty and the user adds exercises in the UI.",
+      inputSchema: {
+        name: z.string().min(1).max(100).describe("Template name"),
+        items: z
+          .array(
+            z.object({
+              exerciseId: z
+                .string()
+                .describe("Exercise ID (from search_exercises)"),
+              equipmentId: z
+                .string()
+                .nullable()
+                .optional()
+                .describe(
+                  "Equipment override ID. Omit/null to use the exercise's default equipment.",
+                ),
+              order: z
+                .number()
+                .int()
+                .min(0)
+                .describe("Position in the template, 0-indexed"),
+            }),
+          )
+          .optional()
+          .describe(
+            "Initial exercises in the template, in order. Optional; can be added later through the UI.",
+          ),
+      },
+      _meta: { ui: { resourceUri: TEMPLATE_RESOURCE_URI } },
+    },
+    async ({ name, items }, extra) => {
+      const userId = extractUserId(extra);
+
+      if (items) {
+        for (const item of items) {
+          if (!(await verifyExerciseAccess(item.exerciseId, userId))) {
+            return error(`Invalid exerciseId: ${item.exerciseId}`);
+          }
+          if (
+            item.equipmentId &&
+            !(await verifyEquipmentAccess(item.equipmentId, userId))
+          ) {
+            return error(`Invalid equipmentId: ${item.equipmentId}`);
+          }
+        }
+      }
+
+      const template = await prisma.workoutTemplate.create({
+        data: {
+          userId,
+          name,
+          items: items
+            ? {
+                create: items.map((item) => ({
+                  exerciseId: item.exerciseId,
+                  equipmentId: item.equipmentId ?? null,
+                  order: item.order,
+                })),
+              }
+            : undefined,
+        },
+        include: templateFullInclude,
+      });
+
+      return {
+        content: [
+          { type: "text" as const, text: JSON.stringify(template, null, 2) },
+        ],
+        structuredContent: template as unknown as Record<string, unknown>,
+      };
+    },
+  );
+
+  registerAppTool(
+    server,
+    "get_workout_template",
+    {
+      title: "Get Workout Template",
+      description:
+        "Get full details of a workout template including all exercises and equipment overrides. Opens an interactive editor UI.",
+      inputSchema: {
+        templateId: z.string().describe("The workout template ID"),
+      },
+      _meta: { ui: { resourceUri: TEMPLATE_RESOURCE_URI } },
+    },
+    async ({ templateId }, extra) => {
+      const userId = extractUserId(extra);
+      const template = await getTemplate(userId, templateId);
+      if (!template) return error("Template not found");
+      return {
+        content: [
+          { type: "text" as const, text: JSON.stringify(template, null, 2) },
+        ],
+        structuredContent: template as unknown as Record<string, unknown>,
+      };
+    },
+  );
+
+  server.registerTool(
+    "update_workout_template",
+    {
+      title: "Update Workout Template",
+      description:
+        "Rename a template and/or replace its exercise list. When `items` is provided, ALL existing items are replaced — pass the full new list with explicit `order` values. Use this single tool for renaming, adding, removing, and reordering.",
+      inputSchema: {
+        templateId: z.string().describe("The template ID"),
+        name: z.string().min(1).max(100).optional().describe("New name"),
+        items: z
+          .array(
+            z.object({
+              exerciseId: z.string(),
+              equipmentId: z.string().nullable().optional(),
+              order: z.number().int().min(0),
+            }),
+          )
+          .optional()
+          .describe(
+            "Full replacement list of items, in order. Omit to leave items unchanged.",
+          ),
+      },
+    },
+    async ({ templateId, name, items }, extra) => {
+      const userId = extractUserId(extra);
+      if (!(await findOwnedTemplate(templateId, userId)))
+        return error("Template not found");
+
+      if (items) {
+        for (const item of items) {
+          if (!(await verifyExerciseAccess(item.exerciseId, userId))) {
+            return error(`Invalid exerciseId: ${item.exerciseId}`);
+          }
+          if (
+            item.equipmentId &&
+            !(await verifyEquipmentAccess(item.equipmentId, userId))
+          ) {
+            return error(`Invalid equipmentId: ${item.equipmentId}`);
+          }
+        }
+      }
+
+      const template = await prisma.$transaction(async (tx) => {
+        if (items) {
+          await tx.workoutTemplateItem.deleteMany({
+            where: { templateId },
+          });
+          if (items.length > 0) {
+            await tx.workoutTemplateItem.createMany({
+              data: items.map((item) => ({
+                templateId,
+                exerciseId: item.exerciseId,
+                equipmentId: item.equipmentId ?? null,
+                order: item.order,
+              })),
+            });
+          }
+        }
+
+        return tx.workoutTemplate.update({
+          where: { id: templateId },
+          data: { ...(name !== undefined && { name }) },
+          include: templateFullInclude,
+        });
+      });
+
+      return json(template);
     },
   );
 }
